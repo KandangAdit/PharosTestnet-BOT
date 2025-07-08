@@ -8,7 +8,7 @@ from aiohttp_socks import ProxyConnector
 from fake_useragent import FakeUserAgent
 from datetime import datetime
 from colorama import *
-import asyncio, random, secrets, json, time, os, pytz
+import asyncio, random, secrets, json, time, os, pytz, yaml
 
 wib = pytz.timezone('Asia/Jakarta')
 
@@ -84,12 +84,14 @@ class PharosTestnet:
                 "type": "function",
             },
         ]
-        self.ref_code = "PNFXEcz1CWezuu3g" # U can change it with yours.
+        
+        self.ref_code = "C317NvEtsdna28xx"
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
         self.signatures = {}
         self.access_tokens = {}
+        self.option = 1
         self.tx_count = 0
         self.tx_amount = 0
         self.wrap_option = None
@@ -101,6 +103,67 @@ class PharosTestnet:
         self.usdt_amount = 0
         self.min_delay = 0
         self.max_delay = 0
+        self.use_proxy_choice = 3
+        self.rotate_proxy = False
+        self.cycle_wait_hours = 24
+
+    def load_config(self):
+        try:
+            with open('config.yml', 'r') as file:
+                config = yaml.safe_load(file)
+            
+            self.option = config.get('option', 1)
+            self.ref_code = config.get('ref_code', self.ref_code)
+            self.cycle_wait_hours = config.get('cycle_wait_hours', 24)
+            
+            transfer_config = config.get('transfer', {})
+            self.tx_count = transfer_config.get('tx_count', 1)
+            self.tx_amount = transfer_config.get('tx_amount', 0.001)
+            transfer_min_delay = transfer_config.get('min_delay', 5)
+            transfer_max_delay = transfer_config.get('max_delay', 10)
+            
+            wrap_config = config.get('wrap', {})
+            self.wrap_option = wrap_config.get('option', 1)
+            self.wrap_amount = wrap_config.get('amount', 0.01)
+            
+            liquidity_config = config.get('liquidity', {})
+            self.add_lp_count = liquidity_config.get('add_lp_count', 1)
+            liquidity_min_delay = liquidity_config.get('min_delay', 10)
+            liquidity_max_delay = liquidity_config.get('max_delay', 20)
+            
+            swap_config = config.get('swap', {})
+            self.swap_count = swap_config.get('swap_count', 1)
+            self.wphrs_amount = swap_config.get('wphrs_amount', 0.001)
+            self.usdc_amount = swap_config.get('usdc_amount', 0.5)
+            self.usdt_amount = swap_config.get('usdt_amount', 0.5)
+            swap_min_delay = swap_config.get('min_delay', 5)
+            swap_max_delay = swap_config.get('max_delay', 15)
+            
+            proxy_config = config.get('proxy', {})
+            self.use_proxy_choice = proxy_config.get('use_proxy_choice', 3)
+            self.rotate_proxy = proxy_config.get('rotate_proxy', False)
+            
+            if self.option == 2:
+                self.min_delay = transfer_min_delay
+                self.max_delay = transfer_max_delay
+            elif self.option == 4:
+                self.min_delay = liquidity_min_delay
+                self.max_delay = liquidity_max_delay
+            elif self.option == 5:
+                self.min_delay = swap_min_delay
+                self.max_delay = swap_max_delay
+            elif self.option == 6:
+                self.min_delay = transfer_min_delay
+                self.max_delay = transfer_max_delay
+            
+            self.log(f"{Fore.GREEN + Style.BRIGHT}Configuration loaded successfully from config.yml{Style.RESET_ALL}")
+            
+        except FileNotFoundError:
+            self.log(f"{Fore.RED + Style.BRIGHT}Error: config.yml file not found. Using default values.{Style.RESET_ALL}")
+        except yaml.YAMLError as e:
+            self.log(f"{Fore.RED + Style.BRIGHT}Error parsing config.yml: {e}. Using default values.{Style.RESET_ALL}")
+        except Exception as e:
+            self.log(f"{Fore.RED + Style.BRIGHT}Error loading config: {e}. Using default values.{Style.RESET_ALL}")
 
     def clear_terminal(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -647,378 +710,12 @@ class PharosTestnet:
             await asyncio.sleep(1)
 
     def print_question(self):
-        while True:
-            try:
-                print(f"{Fore.GREEN + Style.BRIGHT}Select Option:{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}1. Check-In - Claim PHRS Faucet{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}2. Send To Friends{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}3. Wrapped - Unwrapped{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}4. Add Liquidity Pool{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}5. Swap WPHRS - USDC - USDT{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}6. Run All Features{Style.RESET_ALL}")
-                option = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3/4/5/6] -> {Style.RESET_ALL}").strip())
-
-                if option in [1, 2, 3, 4, 5, 6]:
-                    option_type = (
-                        "Check-In - Claim PHRS Faucet" if option == 1 else 
-                        "Send To Friends" if option == 2 else 
-                        "Wrapped - Unwrapped" if option == 3 else
-                        "Add Liquidity Pool" if option == 4 else
-                        "Swap WPHRS - USDC - USDT" if option == 5 else
-                        "Run All Features"
-                    )
-                    print(f"{Fore.GREEN + Style.BRIGHT}{option_type} Selected.{Style.RESET_ALL}")
-                    break
-                else:
-                    print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2, 3, 4, 5 or 6.{Style.RESET_ALL}")
-            except ValueError:
-                print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2, 3, 4, 5 or 6).{Style.RESET_ALL}")
-
-        if option == 2:
-            while True:
-                try:
-                    tx_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Make a Transfer? -> {Style.RESET_ALL}").strip())
-                    if tx_count > 0:
-                        self.tx_count = tx_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    tx_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}Enter Amount for Each Transfers [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if tx_amount > 0:
-                        self.tx_amount = tx_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a float or decimal number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    min_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Min Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if min_delay >= 0:
-                        self.min_delay = min_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    max_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Max Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if max_delay >= min_delay:
-                        self.max_delay = max_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= Min Delay.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-        elif option == 3:
-            while True:
-                try:
-                    print(f"{Fore.GREEN + Style.BRIGHT}Select Option:{Style.RESET_ALL}")
-                    print(f"{Fore.WHITE + Style.BRIGHT}1. Wrapped PHRS to WPHRS{Style.RESET_ALL}")
-                    print(f"{Fore.WHITE + Style.BRIGHT}2. Unwrapped WPHRS to PHRS{Style.RESET_ALL}")
-                    wrap_option = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2] -> {Style.RESET_ALL}").strip())
-
-                    if wrap_option in [1, 2]:
-                        wrap_type = (
-                            "Wrapped PHRS to WPHRS" if wrap_option == 1 else 
-                            "Unwrapped WPHRS to PHRS"
-                        )
-                        print(f"{Fore.GREEN + Style.BRIGHT}{wrap_type} Selected.{Style.RESET_ALL}")
-                        self.wrap_option = wrap_option
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter either 1 or 2.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1 or 2).{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    wrap_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}Enter Amount [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if wrap_amount > 0:
-                        self.wrap_amount = wrap_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a float or decimal number.{Style.RESET_ALL}")
-
-        elif option == 4:
-            while True:
-                try:
-                    add_lp_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Add Liquidity Pool? -> {Style.RESET_ALL}").strip())
-                    if add_lp_count > 0:
-                        self.add_lp_count = add_lp_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    min_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Min Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if min_delay >= 0:
-                        self.min_delay = min_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    max_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Max Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if max_delay >= min_delay:
-                        self.max_delay = max_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= Min Delay.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-        elif option == 5:
-            while True:
-                try:
-                    swap_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Make a Swap? -> {Style.RESET_ALL}").strip())
-                    if swap_count > 0:
-                        self.swap_count = swap_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    wphrs_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}WPHRS Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if wphrs_amount > 0:
-                        self.wphrs_amount = wphrs_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    usdc_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}USDC Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if usdc_amount > 0:
-                        self.usdc_amount = usdc_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    usdt_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}USDT Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if usdt_amount > 0:
-                        self.usdt_amount = usdt_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    min_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Min Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if min_delay >= 0:
-                        self.min_delay = min_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    max_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Max Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if max_delay >= min_delay:
-                        self.max_delay = max_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= Min Delay.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-        elif option == 6:
-            while True:
-                try:
-                    tx_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Make a Transfer? -> {Style.RESET_ALL}").strip())
-                    if tx_count > 0:
-                        self.tx_count = tx_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    tx_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}Enter Amount for Each Transfers [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if tx_amount > 0:
-                        self.tx_amount = tx_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a float or decimal number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    print(f"{Fore.GREEN + Style.BRIGHT}Select Option:{Style.RESET_ALL}")
-                    print(f"{Fore.WHITE + Style.BRIGHT}1. Wrapped PHRS to WPHRS{Style.RESET_ALL}")
-                    print(f"{Fore.WHITE + Style.BRIGHT}2. Unwrapped WPHRS to PHRS{Style.RESET_ALL}")
-                    print(f"{Fore.WHITE + Style.BRIGHT}3. Skipped{Style.RESET_ALL}")
-                    wrap_option = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3] -> {Style.RESET_ALL}").strip())
-
-                    if wrap_option in [1, 2, 3]:
-                        wrap_type = (
-                            "Wrapped PHRS to WPHRS" if wrap_option == 1 else 
-                            "Unwrapped WPHRS to PHRS" if wrap_option == 2 else
-                            "Skipped"
-                        )
-                        print(f"{Fore.GREEN + Style.BRIGHT}{wrap_type} Selected.{Style.RESET_ALL}")
-                        self.wrap_option = wrap_option
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2, or 3.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2, or 3).{Style.RESET_ALL}")
-
-            if wrap_option in [1, 2]:
-                while True:
-                    try:
-                        wrap_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}Enter Amount [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                        if wrap_amount > 0:
-                            self.wrap_amount = wrap_amount
-                            break
-                        else:
-                            print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                    except ValueError:
-                        print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a float or decimal number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    add_lp_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Add Liquidity Pool? -> {Style.RESET_ALL}").strip())
-                    if add_lp_count > 0:
-                        self.add_lp_count = add_lp_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    swap_count = int(input(f"{Fore.YELLOW + Style.BRIGHT}How Many Times Do You Want To Make a Swap? -> {Style.RESET_ALL}").strip())
-                    if swap_count > 0:
-                        self.swap_count = swap_count
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Please enter positive number.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    wphrs_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}WPHRS Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if wphrs_amount > 0:
-                        self.wphrs_amount = wphrs_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    usdc_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}USDC Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if usdc_amount > 0:
-                        self.usdc_amount = usdc_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    usdt_amount = float(input(f"{Fore.YELLOW + Style.BRIGHT}USDT Swap Amount? [1 or 0.01 or 0.001, etc in decimals] -> {Style.RESET_ALL}").strip())
-                    if usdt_amount > 0:
-                        self.usdt_amount = usdt_amount
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Amount must be greater than 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    min_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Min Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if min_delay >= 0:
-                        self.min_delay = min_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= 0.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
-
-            while True:
-                try:
-                    max_delay = int(input(f"{Fore.YELLOW + Style.BRIGHT}Max Delay Each Tx -> {Style.RESET_ALL}").strip())
-                    if max_delay >= min_delay:
-                        self.max_delay = max_delay
-                        break
-                    else:
-                        print(f"{Fore.RED + Style.BRIGHT}Min Delay must be >= Min Delay.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number.{Style.RESET_ALL}")
+        """Load configuration from config.yml instead of asking for user input"""
+        self.load_config()
         
-        while True:
-            try:
-                print(f"{Fore.WHITE + Style.BRIGHT}1. Run With Free Proxyscrape Proxy{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}2. Run With Private Proxy{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}3. Run Without Proxy{Style.RESET_ALL}")
-                choose = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3] -> {Style.RESET_ALL}").strip())
+        use_proxy = self.use_proxy_choice in [1, 2]
+        return self.option, self.use_proxy_choice, self.rotate_proxy
 
-                if choose in [1, 2, 3]:
-                    proxy_type = (
-                        "With Free Proxyscrape" if choose == 1 else 
-                        "With Private" if choose == 2 else 
-                        "Without"
-                    )
-                    print(f"{Fore.GREEN + Style.BRIGHT}Run {proxy_type} Proxy Selected.{Style.RESET_ALL}")
-                    break
-                else:
-                    print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2 or 3.{Style.RESET_ALL}")
-            except ValueError:
-                print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
-
-        rotate = False
-        if choose in [1, 2]:
-            while True:
-                rotate = input(f"{Fore.BLUE + Style.BRIGHT}Rotate Invalid Proxy? [y/n] -> {Style.RESET_ALL}").strip()
-
-                if rotate in ["y", "n"]:
-                    rotate = rotate == "y"
-                    break
-                else:
-                    print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter 'y' or 'n'.{Style.RESET_ALL}")
-
-        return option, choose, rotate
-    
     async def user_login(self, address: str, proxy=None, retries=5):
         url = f"{self.BASE_API}/user/login?address={address}&signature={self.signatures[address]}&wallet=OKX+Wallet&invite_code={self.ref_code}"
         headers = {
@@ -1725,7 +1422,7 @@ class PharosTestnet:
                         await asyncio.sleep(3)
 
                 self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*72)
-                seconds = 24 * 60 * 60
+                seconds = self.cycle_wait_hours * 60 * 60
                 while seconds > 0:
                     formatted_time = self.format_seconds(seconds)
                     print(
